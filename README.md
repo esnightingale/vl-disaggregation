@@ -12,7 +12,7 @@ Spatial autocorrelation is evident on a block-level but appears weak between nei
 
 ## Ethics and permissions
 
-Ethical approval was obtained from the London School of Hygiene and Tropical Medicine ethics committee for this specific study (ref:27487) which falls within the broader objectives of the SPEAK India research consortium \url{https://speakindia.org.in/} (ref: 14674). Permissions were granted by the National Center for Vector Borne Disease Control in India (NCVBDC) for analysis of the KA-MIS surveillance data to address SPEAK India's research objectives.
+Ethical approval was obtained from the London School of Hygiene and Tropical Medicine ethics committee for this specific study (ref:27487) which falls within the broader objectives of the SPEAK India research consortium https://speakindia.org.in/ (ref: 14674). Permissions were granted by the National Center for Vector Borne Disease Control in India (NCVBDC) for analysis of the KA-MIS surveillance data to address SPEAK India's research objectives.
 
 ## Data Availability
 
