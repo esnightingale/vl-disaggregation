@@ -1,0 +1,58 @@
+"name","value","n"
+"Baseline",0,43195
+"Baseline",1,1384
+"Baseline",2,152
+"Baseline",3,30
+"Baseline",4,15
+"Baseline",5,5
+"Baseline",6,6
+"Baseline",7,2
+"Baseline",9,3
+"Baseline",10,1
+"Baseline",11,1
+"Disaggregation (without field)",0,43301
+"Disaggregation (without field)",1,1271
+"Disaggregation (without field)",2,139
+"Disaggregation (without field)",3,46
+"Disaggregation (without field)",4,15
+"Disaggregation (without field)",5,12
+"Disaggregation (without field)",6,1
+"Disaggregation (without field)",7,5
+"Disaggregation (without field)",8,2
+"Disaggregation (without field)",10,1
+"Disaggregation (without field)",18,1
+"Disaggregation (Full)",0,43226
+"Disaggregation (Full)",1,1379
+"Disaggregation (Full)",2,130
+"Disaggregation (Full)",3,29
+"Disaggregation (Full)",4,16
+"Disaggregation (Full)",5,7
+"Disaggregation (Full)",6,2
+"Disaggregation (Full)",7,4
+"Disaggregation (Full)",8,1
+"Village-level random forest",0,43020
+"Village-level random forest",1,1651
+"Village-level random forest",2,103
+"Village-level random forest",3,16
+"Village-level random forest",4,2
+"Village-level random forest",5,2
+"Observed",0,42894
+"Observed",1,1248
+"Observed",2,323
+"Observed",3,133
+"Observed",4,68
+"Observed",5,47
+"Observed",6,18
+"Observed",7,18
+"Observed",8,13
+"Observed",9,7
+"Observed",11,5
+"Observed",12,4
+"Observed",13,4
+"Observed",14,2
+"Observed",15,3
+"Observed",19,1
+"Observed",22,2
+"Observed",25,1
+"Observed",28,1
+"Observed",32,2

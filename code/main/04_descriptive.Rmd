@@ -1,0 +1,470 @@
+---
+title: "Block and village-level VL - descriptive"
+output: html_notebook
+---
+
+```{r setup}
+
+set.seed(1000)
+
+library(tidyverse)
+library(sf)
+library(spdep)
+library(raster)
+library(rgeos)
+library(patchwork)
+
+theme_set(theme_minimal())
+pal <- viridis::plasma(4)
+
+# Fix default ggsave background
+ggsave <- function(..., bg = 'white') ggplot2::ggsave(..., bg = bg)
+
+sf::sf_use_s2(TRUE)
+
+# Local data folder
+datadir <- "C:/Users/phpuenig/Documents/VL/Data"
+
+figdir <- "figures/descriptive"
+```
+
+```{r read_data}
+
+v_raw <- read.csv(here::here(datadir,"KAMIS","Raw","village","village level data-Bi+Jh.csv"), header=TRUE) %>% 
+  filter(state == "BIHAR") %>% 
+  dplyr::select(vil_code, district, block, hsc, village, population, X2018) %>% 
+  mutate(dist_blk = paste(district, block, sep = ":"))
+
+v_shp_vl <- readRDS(here::here("data","analysis","v_shp_vl.rds")) %>% 
+  st_transform(4326)
+v_cent_vl <- readRDS(here::here("data","analysis","v_cent_vl.rds")) %>% 
+  st_transform(4326)
+b_shp_vl <- readRDS(here::here("data","analysis","b_shp_vl.rds")) %>% 
+  st_transform(4326)
+boundary <- readRDS(here::here("data","analysis","boundary.rds")) %>% 
+  st_transform(4326)
+
+v_shp_vl %>% 
+  st_drop_geometry() -> v_df
+
+```
+
+```{r totals}
+
+# Raw data
+paste("2018 case count (raw):",sum(v_raw$X2018))
+
+v_raw %>% 
+  filter(X2018 > 0) %>% 
+  summarise(n_blk = n_distinct(dist_blk),
+            n_vil = n_distinct(vil_code))
+
+# Analysis data
+paste("2018 case count (analysis):",sum(v_shp_vl$X2018))
+
+v_shp_vl %>% 
+  st_drop_geometry() %>% 
+  filter(X2018 > 0) %>% 
+  summarise(n_blk = n_distinct(BLK_C_2011),
+            n_vil = n_distinct(OBJECTID))
+
+```
+
+## Populations and village areas
+
+```{r pops}
+
+summary(v_df$pop_care_estimate[v_df$pop_care_estimate != 0])
+summary(v_df$pop_raster_agg)
+
+v_df %>% 
+  summarise(n_zero_pop = sum(pop_raster_agg == 0),
+            p_zero_pop = mean(pop_raster_agg == 0),
+            n_zero_pop_wcases = sum(pop_raster_agg[X2018 > 0] == 0))
+
+v_shp_vl %>% 
+  st_transform(7759) %>% 
+  st_area() %>% 
+  units::set_units(km^2) -> area_km2 
+
+summary(area_km2)
+mean(as.numeric(area_km2 < 1*units::as_units("km^2")))
+```
+
+## Block level incidence
+
+Summarise and plot observed incidence in 2018 by block:
+
+```{r byblk}
+
+summary(b_shp_vl$X2018_inc_blk*1e4)
+# Min. 1st Qu.  Median    Mean 3rd Qu.    Max. 
+# 0.0000  0.0000  0.0880  0.3015  0.3205  7.0854
+
+ggplot(b_shp_vl, aes(x = X2018_inc_blk*1e4)) +
+  geom_histogram() +
+  labs(x = "Incidence per 10,000", y = "Frequency") -> inc_hist
+inc_hist
+ggsave(here::here(figdir,"hist_blkinc_2018.png"), height = 4, width = 5)
+
+ggplot(b_shp_vl, aes(geometry = geometry, fill = X2018_inc_blk*1e4)) +
+  geom_sf(data = boundary, fill = "grey") +
+  geom_sf(col = NA) +
+  scale_fill_viridis_c(trans = "sqrt") +
+  labs(fill = "Incidence\nper 10,000") -> inc_map
+inc_map
+ggsave(here::here(figdir,"map_blk_inc_2018.png"), height = 4, width = 6)
+
+inc_hist + inc_map + plot_annotation(tag_levels = "A")
+ggsave(here::here(figdir,"blk_inc_2018.png"), height = 4, width = 10)
+ggsave(here::here("figures/manuscript/Fig2.png"), height = 4, width = 10)
+
+```
+
+## Village level incidence
+
+```{r vill_inc}
+
+summary(v_shp_vl$X2018_inc*1000)
+
+v_df %>% 
+  filter(X2018_inc*1000 > 300) %>% 
+  dplyr::select(DIST_NAME:V_NAME,X2018, pop_care_estimate:X2018_inc)
+
+```
+
+Plot observed incidence by village:
+
+```{r plot_vill_inc}
+
+ggplot(v_shp_vl, aes(fill = X2018*1000/pop_raster_agg)) +
+  geom_sf(col = NA) +
+  scale_fill_viridis_c(trans = "sqrt", na.value = "grey", direction = 1) + 
+  labs(fill = "Incidence\nper 1000")
+ggsave(here::here(figdir,"vil_inc_2018.png"), height = 4, width = 5)
+
+```
+
+### Block vs village incidence rates
+
+Compare observed village and block incidence. Some village populations estimated as 0, so first need to replace resulting NaNs with 0s in village incidence. Then calculate the overall correlation and plot the scatter.
+
+```{r blk_vil_inc}
+
+v_shp_vl %>% 
+  mutate(X2018_inc = replace_na(X2018/pop_raster_agg, 0)) -> v_shp_vl
+
+cor(v_shp_vl$X2018_inc, v_shp_vl$X2018_inc_blk, method = "spearman") # 0.25
+
+# Scatter plot (log scale; excluding 0 incidence)
+v_shp_vl %>% 
+  ggplot(aes(X2018_inc_blk, X2018_inc)) +
+  geom_jitter(alpha = 0.3) +
+  geom_abline() +
+  labs(x = "Observed block incidence rate",
+       y = "Observed village incidence rate") + 
+  scale_x_continuous(trans = "log10") + 
+  scale_y_continuous(trans = "log10")
+ggsave(here::here(figdir,"obsvexp_vill_inc.png"), height = 4, width = 5)
+
+v_shp_vl %>% 
+  st_drop_geometry() %>% 
+  mutate(X2018_exp = round(X2018_inc_blk*pop_raster_agg)) %>% 
+  dplyr::select(OBJECTID, X2018_exp, X2018) %>% 
+  pivot_longer(-OBJECTID) %>% 
+  mutate(name = factor(name, 
+                       levels = c("X2018_exp","X2018"), 
+                       labels = c("Baseline prediction\n(Uniform incidence per block)","Observed"))) -> obs_exp_long
+  
+obs_exp_long %>% 
+  ggplot(aes(as.factor(round(value)), fill = name)) +
+  geom_bar(position = position_dodge(preserve = "single")) +
+  scale_fill_manual(values = c(pal[1],"darkgrey")) +
+  labs(fill = "", y = "No. villages", x = "Case count") +
+  # ylim(0,1000) +
+  scale_y_continuous(trans = "log2") +
+  theme(legend.position = c(0.7,0.8)) -> bycat_all
+
+bycat_all
+ggsave(here::here(figdir,"obsvexp_bycats.png"), height = 4, width = 8)
+ggsave(here::here("figures/manuscript/Fig3.png"), height = 4, width = 8)
+
+```
+
+## Spatial autocorrelation
+
+Calculate Moran's I statistic for evidence of correlation between neighbouring blocks:
+
+```{r block_autocorr}
+
+# Specify cluster neighbour structure/weights
+nb <- poly2nb(b_shp_vl)
+lw <- nb2listw(nb, style = "B", zero.policy = TRUE)
+  
+bMC <- moran.mc(b_shp_vl$X2018_inc_blk, lw, nsim=999, zero.policy = TRUE)
+bMC
+plot(bMC, xlab = "Block-level incidence")
+
+```
+
+Also calculate across villages:
+
+```{r village_autocorr}
+
+# Specify cluster neighbour structure/weights
+nb <- poly2nb(v_shp_vl)
+lw <- nb2listw(nb, style = "B", zero.policy = TRUE)
+  
+vMC <- moran.mc(v_shp_vl$X2018_inc, lw, nsim=999, zero.policy = TRUE)
+vMC
+plot(vMC, xlab = "Village-level incidence")
+
+```
+
+```{r save_plot_I}
+png(here::here(figdir, "moran_I_blk_vil.png"), height = 1000, width = 2200, res = 250)
+par(mfrow = c(1,2))
+plot(bMC, xlab = "Block-level incidence", main = "")
+plot(vMC, xlab = "Village-level incidence", main = "")
+dev.off()
+```
+
+Calculate statistic across villages within each block, to compare strength of correlation between high/low incidence blocks:
+
+```{r moran_byblk}
+
+calc_moranMC_blk <- function(i){
+  
+  # Specify cluster neighbour structure/weights
+  nb <- poly2nb(v_shp_vl[v_shp_vl$BLK_C_2011 == i,])
+
+  lw <- nb2listw(nb, style = "B", zero.policy = TRUE)
+
+  MC <- moran.mc(v_shp_vl$X2018_inc[v_shp_vl$BLK_C_2011 == i], lw, nsim=999, zero.policy = TRUE)
+  return(c(I = MC$statistic, p = MC$p.value))
+
+}
+
+# Only run on non-zero blocks
+blknms <- unique(v_shp_vl$BLK_C_2011[v_shp_vl$X2018_inc_blk > 0])
+MC_byblk <- lapply(blknms, calc_moranMC_blk)
+
+bind_rows(MC_byblk) %>% 
+  mutate(blk_inc = b_shp_vl$X2018_inc_blk[b_shp_vl$X2018_inc_blk > 0]) %>%
+  ggplot(aes(blk_inc*10000, I.statistic)) + 
+  geom_hline(yintercept = 0, col = "grey") +
+  geom_point(alpha = 0.5) +
+  scale_x_continuous(trans = "sqrt") +
+  labs(x = "Block incidence per 10,000", y = "Moran's I statistic from village incidence")
+ggsave(here::here(figdir,"moran_I_byblk.png"), height = 5, width = 6)
+
+bind_rows(MC_byblk) %>% 
+  mutate(blk_inc = b_shp_vl$X2018_inc_blk[b_shp_vl$X2018_inc_blk > 0]) %>%
+  ggplot(aes(blk_inc*10000, p)) + 
+  geom_hline(yintercept = 0.01, col = "grey", lty = "dashed") +
+  geom_point(alpha = 0.5) +
+  scale_x_continuous(trans = "sqrt") +
+  labs(x = "Block incidence per 10,000", y = "P-value of Moran's I from village incidence")
+ggsave(here::here(figdir,"moran_p_byblk.png"), height = 5, width = 6)
+
+```
+
+Calculate and map out ratio of village versus block incidence, overall and for a sample of blocks at different incidence levels.
+
+```{r blk_vs_vil_ratio}
+
+# # Map out the ratio of observed to expected
+# v_shp_vl %>% 
+#   mutate(exp = round(X2018_inc_blk),
+#          obs_v_exp = X2018/exp,
+#          obs_exp_diff = (X2018 - exp)) %>%
+#   ggplot() +
+#   geom_sf(aes(geometry = geometry, fill = obs_v_exp), col = NA) +
+#   geom_sf(data = boundary, fill = NA) +
+#   scale_fill_viridis_c(na.value = "white", direction = -1, option = "rocket") + 
+#   labs(fill = "Observed - expected") -> obs_v_exp
+# obs_v_exp
+# 
+# # ggsave(here::here("figures","obsvexp_vill_inc_2018.png"), height = 6, width = 8, dpi = 250)
+# 
+# # Look at observed vs expected for example high/mid/low incidence blocks 
+# 
+# blkdata <- v_shp_vl %>% 
+#   dplyr::select(BLK_C_2011, X2018_inc_blk) %>% 
+#   distinct() %>% 
+#   mutate(inc_cat = cut(X2018_inc_blk*1e4, breaks = c(-Inf,0,0.5,1,2,Inf), right = TRUE))
+# 
+# summary(blkdata$inc_cat)
+# # (-Inf,0]  (0,0.5]  (0.5,1]    (1,2] (2, Inf] 
+# #    18940    18715     3698     2373     1068
+# 
+# blk_lo <- sample(blkdata$BLK_C_2011[blkdata$inc_cat == "(0,0.5]"],1)
+# blk_lomid <- sample(blkdata$BLK_C_2011[blkdata$inc_cat == "(0.5,1]"],1)
+# blk_himid <- sample(blkdata$BLK_C_2011[blkdata$inc_cat == "(1,2]"],1)
+# blk_hi <- sample(blkdata$BLK_C_2011[blkdata$inc_cat == "(2, Inf]"],1)
+# 
+# samps <- c(`Low` = blk_lo, `Mid: under target` = blk_lomid, `Mid: above target` = blk_himid, `High` = blk_hi)
+# 
+# plot_block <- function(blk, nm){
+#   vil_shp_vl_wblk %>% 
+#     filter(dist_blk == blk) %>% 
+#     ggplot() +
+#     geom_sf(aes(geometry = geometry, fill = X2018_inc*1000), cex = 0.7, col = NA) +
+#     # geom_sf(data = boundary, fill = NA) +
+#     # scale_colour_viridis_c(trans = "identity", na.value = "white", direction = -1) + 
+#     scale_fill_viridis_c(trans = "identity", 
+#                          na.value = "white", 
+#                          direction = -1,
+#                          limits = c(0, 0.005), 
+#                          oob = scales::squish) + 
+#     labs(fill = "Incidence\nper 1000",
+#          title = nm
+#          # title = "Expected village case counts by block level incidence"
+#     ) -> p
+#   return(p)
+# }
+# 
+# plots <- purrr::map2(samps, names(samps), plot_block)
+# gridExtra::grid.arrange(grobs = plots)
+# ggsave(here::here("figures","expected_vill_inc_sampleblocks.png"), height = 12, width = 12)
+
+```
+
+## Covariates
+
+Summarise village covariate values by VL affected:
+
+```{r cov_table}
+
+# Non-standardised covariate raster stack
+covariate_stack <- readRDS(here::here("data","covariates","analysis","cov_stack_1km.rds"))
+
+# Keep city travel time instead of distance to major road
+covariate_stack <- raster::dropLayer(covariate_stack, "dist_majroad")
+covariate_stack <- raster::dropLayer(covariate_stack, "built_ext")
+
+# Drop population raster
+names(covariate_stack)
+stk <- covariate_stack[[-1]]
+
+covs <- exactextractr::exact_extract(stk, v_shp_vl, fun = "mean")
+names(covs) <- gsub("mean.","", names(covs))
+
+v_df <- v_df %>% 
+  dplyr::select(-elev:-ndvi_sd) %>% 
+  bind_cols(covs) 
+
+paste_range <- function(var, digits = 2){
+  med <- round(median(var),digits)
+  range <- paste(round(quantile(var, c(0.25,0.75)),digits), collapse = ", ")
+  v <- paste0(med, " [", range,"]")
+  return(v)
+}
+
+v_df %>% 
+  mutate(Overall = TRUE,
+         Affected = (X2018 > 0),
+         Unaffected = (X2018 == 0)) %>% 
+  pivot_longer(c("Overall","Affected","Unaffected")) %>% 
+  filter(value) %>% 
+  mutate(name = factor(name, levels = c("Overall","Affected","Unaffected"))) %>% 
+  group_by(name) %>% 
+  summarise(N = n(),
+            pop = paste_range(pop_raster_agg, digits = 1),
+            across(c(elev:ndvi_sd), paste_range)) %>% 
+  column_to_rownames("name") %>%
+  ungroup() -> tab1
+
+tab1
+
+write.csv(t(tab1), here::here("output","tab1.csv"), row.names = T)
+
+```
+
+```{r plot_covs_raster}
+
+plot_cov <- function(i, nm){
+  
+  r <- subset(covariate_stack, i)
+  r <- raster::mask(r, as_Spatial(boundary))
+  
+  r_spdf <- as(r, "SpatialPixelsDataFrame")
+  r_df <- as.data.frame(r_spdf) %>% 
+    rename(layer = 1)
+  
+  ggplot() +
+    geom_raster(data = r_df, aes(x = x, y = y, fill = layer)) +
+    scale_fill_viridis_c(trans = "identity", na.value = "white") + 
+    labs(title = nm, fill = "", x = "", y = "") +
+    theme(axis.text = element_blank()) +
+    coord_quickmap() -> p
+  
+ return(p)
+  
+}
+
+names <- c("Population","Elevation","Distance to water","Travel time to city",
+                            "LST (mean)","LST (SD)", "NDVI (mean)", "NDVI (SD)")
+
+covplots <- purrr::map2(1:nlayers(covariate_stack), names, plot_cov)
+
+plotgrid <- gridExtra::grid.arrange(grobs = as.list(covplots))
+
+ggsave(here::here("figures","covariates","covariates_all.png"), plotgrid, height = 10, width = 15, dpi = 250)
+
+for (p in seq_along(covplots)){
+  png(here::here("figures","covariates",paste0(names(covariate_stack)[p],".png")), height = 800, width = 1000, res = 200)
+  print(covplots[p])
+  dev.off()
+}
+
+```
+
+
+```{r plot_covs_village}
+
+v_df %>% 
+  pivot_longer(c(pop_raster_agg,elev:ndvi_sd)) %>% 
+  mutate(inc = replace_na(X2018_inc*1000, 0)) %>% 
+  ggplot(aes(value, inc)) +
+  geom_point(alpha = 0.3) +
+  geom_smooth() +
+  facet_wrap(~name, scales = "free") + 
+  labs(x = "Village-averaged covariate",
+       y = "Village incidence per 1,000") -> cont_orig
+cont_orig
+
+v_df %>% 
+  pivot_longer(c(pop_raster_agg,elev:ndvi_sd)) %>% 
+  mutate(inc = replace_na(X2018_inc*1000, 0)) %>% 
+  ggplot(aes(value, inc)) +
+  geom_point(alpha = 0.3) +
+  geom_smooth() +
+  scale_x_continuous(trans = "log") +
+  scale_y_continuous(trans = "log") +
+  facet_wrap(~name, scales = "free") + 
+  labs(x = "Village-averaged covariate",
+       y = "Village incidence per 1,000") -> cont_trans
+cont_trans
+
+v_df %>% 
+  pivot_longer(c(pop_raster_agg,elev:ndvi_sd)) %>% 
+  mutate(inc = replace_na(X2018_inc > 0, FALSE)) %>% 
+  ggplot(aes(value, inc)) +
+  geom_boxplot(alpha = 0.3) +
+  facet_wrap(~name, scales = "free") + 
+  labs(x = "Village-averaged covariate",
+       y = "Village incidence > 0") -> discr_orig
+discr_orig
+
+v_df %>% 
+  pivot_longer(c(pop_raster_agg,elev:ndvi_sd)) %>% 
+  mutate(inc = replace_na(X2018_inc > 0, FALSE)) %>% 
+  ggplot(aes(value, inc)) +
+  geom_boxplot(alpha = 0.3) +
+  scale_x_continuous(trans = "log") +
+  facet_wrap(~name, scales = "free") + 
+  labs(x = "Village-averaged covariate",
+       y = "Village incidence > 0") -> discr_trans
+discr_trans
+```
