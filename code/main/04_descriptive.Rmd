@@ -1,6 +1,8 @@
 ---
 title: "Block and village-level VL - descriptive"
-output: html_notebook
+output:
+  html_document:
+    df_print: paged
 ---
 
 ```{r setup}
@@ -23,7 +25,7 @@ ggsave <- function(..., bg = 'white') ggplot2::ggsave(..., bg = bg)
 sf::sf_use_s2(TRUE)
 
 # Local data folder
-datadir <- "C:/Users/phpuenig/Documents/VL/Data"
+datadir <- "~/VL/Data"
 
 figdir <- "figures/descriptive"
 ```
@@ -36,11 +38,11 @@ v_raw <- read.csv(here::here(datadir,"KAMIS","Raw","village","village level data
   mutate(dist_blk = paste(district, block, sep = ":"))
 
 v_shp_vl <- readRDS(here::here("data","analysis","v_shp_vl.rds")) %>% 
-  st_transform(4326)
+  st_transform(4326) %>% st_make_valid()
 v_cent_vl <- readRDS(here::here("data","analysis","v_cent_vl.rds")) %>% 
   st_transform(4326)
 b_shp_vl <- readRDS(here::here("data","analysis","b_shp_vl.rds")) %>% 
-  st_transform(4326)
+  st_transform(4326) %>% st_make_valid()
 boundary <- readRDS(here::here("data","analysis","boundary.rds")) %>% 
   st_transform(4326)
 
@@ -111,11 +113,13 @@ ggplot(b_shp_vl, aes(geometry = geometry, fill = X2018_inc_blk*1e4)) +
   geom_sf(data = boundary, fill = "grey") +
   geom_sf(col = NA) +
   scale_fill_viridis_c(trans = "sqrt") +
-  labs(fill = "Incidence\nper 10,000") -> inc_map
+  labs(fill = "Incidence\nper 10,000") + 
+  scale_x_continuous(breaks = c(84,86,88)) + 
+  scale_y_continuous(breaks = c(25,26,27)) -> inc_map
 inc_map
 ggsave(here::here(figdir,"map_blk_inc_2018.png"), height = 4, width = 6)
 
-inc_hist + inc_map + plot_annotation(tag_levels = "A")
+inc_hist + inc_map + plot_annotation(tag_levels = "a")
 ggsave(here::here(figdir,"blk_inc_2018.png"), height = 4, width = 10)
 ggsave(here::here("figures/manuscript/Fig2.png"), height = 4, width = 10)
 
@@ -140,7 +144,9 @@ Plot observed incidence by village:
 ggplot(v_shp_vl, aes(fill = X2018*1000/pop_raster_agg)) +
   geom_sf(col = NA) +
   scale_fill_viridis_c(trans = "sqrt", na.value = "grey", direction = 1) + 
-  labs(fill = "Incidence\nper 1000")
+  labs(fill = "Incidence\nper 1000") +
+  scale_x_continuous(breaks = c(84,86,88)) + 
+  scale_y_continuous(breaks = c(25,26,27)) 
 ggsave(here::here(figdir,"vil_inc_2018.png"), height = 4, width = 5)
 
 ```
@@ -222,11 +228,36 @@ plot(vMC, xlab = "Village-level incidence")
 ```
 
 ```{r save_plot_I}
-png(here::here(figdir, "moran_I_blk_vil.png"), height = 1000, width = 2200, res = 250)
-par(mfrow = c(1,2))
-plot(bMC, xlab = "Block-level incidence", main = "")
-plot(vMC, xlab = "Village-level incidence", main = "")
-dev.off()
+
+# Extract simulated Moran's I values
+simI_blk <- bMC$res
+simI_vil <- vMC$res
+
+# Create a data frame for ggplot
+moran_data <- data.frame(simI_blk = simI_blk,
+                         simI_vil = simI_vil) 
+
+moran_data %>%  
+  ggplot(aes(x = simI_blk)) +
+  geom_histogram() +
+  geom_vline(aes(xintercept = bMC$statistic), linetype = "dashed") +
+  labs(subtitle = "By block",
+       x = "Simulated Moran's I",
+       y = "Frequency") +
+  theme_minimal() -> plot_bMC
+
+moran_data %>%  
+  ggplot(aes(x = simI_vil)) +
+  geom_histogram() +
+  geom_vline(aes(xintercept = vMC$statistic), linetype = "dashed") +
+  labs(subtitle = "By village",
+       x = "Simulated Moran's I",
+       y = "Frequency") +
+  theme_minimal() -> plot_vMC
+
+plot_bMC + plot_vMC + plot_annotation(title = "Monte Carlo Simulation of Moran's I", tag_levels = "a")
+ggsave(here::here("figures/manuscript/supplementary/FigS3_revised.png"), height = 4, width = 9, dpi = 300)
+
 ```
 
 Calculate statistic across villages within each block, to compare strength of correlation between high/low incidence blocks:
@@ -266,67 +297,6 @@ bind_rows(MC_byblk) %>%
   scale_x_continuous(trans = "sqrt") +
   labs(x = "Block incidence per 10,000", y = "P-value of Moran's I from village incidence")
 ggsave(here::here(figdir,"moran_p_byblk.png"), height = 5, width = 6)
-
-```
-
-Calculate and map out ratio of village versus block incidence, overall and for a sample of blocks at different incidence levels.
-
-```{r blk_vs_vil_ratio}
-
-# # Map out the ratio of observed to expected
-# v_shp_vl %>% 
-#   mutate(exp = round(X2018_inc_blk),
-#          obs_v_exp = X2018/exp,
-#          obs_exp_diff = (X2018 - exp)) %>%
-#   ggplot() +
-#   geom_sf(aes(geometry = geometry, fill = obs_v_exp), col = NA) +
-#   geom_sf(data = boundary, fill = NA) +
-#   scale_fill_viridis_c(na.value = "white", direction = -1, option = "rocket") + 
-#   labs(fill = "Observed - expected") -> obs_v_exp
-# obs_v_exp
-# 
-# # ggsave(here::here("figures","obsvexp_vill_inc_2018.png"), height = 6, width = 8, dpi = 250)
-# 
-# # Look at observed vs expected for example high/mid/low incidence blocks 
-# 
-# blkdata <- v_shp_vl %>% 
-#   dplyr::select(BLK_C_2011, X2018_inc_blk) %>% 
-#   distinct() %>% 
-#   mutate(inc_cat = cut(X2018_inc_blk*1e4, breaks = c(-Inf,0,0.5,1,2,Inf), right = TRUE))
-# 
-# summary(blkdata$inc_cat)
-# # (-Inf,0]  (0,0.5]  (0.5,1]    (1,2] (2, Inf] 
-# #    18940    18715     3698     2373     1068
-# 
-# blk_lo <- sample(blkdata$BLK_C_2011[blkdata$inc_cat == "(0,0.5]"],1)
-# blk_lomid <- sample(blkdata$BLK_C_2011[blkdata$inc_cat == "(0.5,1]"],1)
-# blk_himid <- sample(blkdata$BLK_C_2011[blkdata$inc_cat == "(1,2]"],1)
-# blk_hi <- sample(blkdata$BLK_C_2011[blkdata$inc_cat == "(2, Inf]"],1)
-# 
-# samps <- c(`Low` = blk_lo, `Mid: under target` = blk_lomid, `Mid: above target` = blk_himid, `High` = blk_hi)
-# 
-# plot_block <- function(blk, nm){
-#   vil_shp_vl_wblk %>% 
-#     filter(dist_blk == blk) %>% 
-#     ggplot() +
-#     geom_sf(aes(geometry = geometry, fill = X2018_inc*1000), cex = 0.7, col = NA) +
-#     # geom_sf(data = boundary, fill = NA) +
-#     # scale_colour_viridis_c(trans = "identity", na.value = "white", direction = -1) + 
-#     scale_fill_viridis_c(trans = "identity", 
-#                          na.value = "white", 
-#                          direction = -1,
-#                          limits = c(0, 0.005), 
-#                          oob = scales::squish) + 
-#     labs(fill = "Incidence\nper 1000",
-#          title = nm
-#          # title = "Expected village case counts by block level incidence"
-#     ) -> p
-#   return(p)
-# }
-# 
-# plots <- purrr::map2(samps, names(samps), plot_block)
-# gridExtra::grid.arrange(grobs = plots)
-# ggsave(here::here("figures","expected_vill_inc_sampleblocks.png"), height = 12, width = 12)
 
 ```
 

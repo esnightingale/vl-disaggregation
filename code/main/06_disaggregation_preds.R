@@ -10,7 +10,7 @@ library(cowplot)
 
 # Fix default ggsave background
 ggsave <- function(..., bg = 'white') ggplot2::ggsave(..., bg = bg)
-theme_set(theme_minimal())
+theme_set(theme_minimal(base_size = 16))
 
 # Local data folder
 datadir <- "C:/Users/phpuenig/Documents/VL/Data"
@@ -77,7 +77,7 @@ covtab %>%
 
 plot_covs
 ggsave(here::here(figdir, "disag_fixeff.png"), height = 6, width = 8)
-ggsave(here::here("figures/manuscript/Fig4a.png"), height = 6, width = 8)
+ggsave(here::here("figures/manuscript/Fig4a_revised.png"), height = 6, width = 8, dpi = 300)
 
 # ---------------------------------------------------------------------------- #
 # Predict from models
@@ -90,55 +90,66 @@ saveRDS(predictions, here::here("output", "disag_predictions.rds"))
 # Plot predictions
 
 ## Pixel level ##
-plot_preds <- function(pred, nm){
-  png(here::here(figdir,paste0("pred_",gsub(" ","",nm),".png")), width = 800, height = 600)
-  plot(mask(pred$mean_prediction$prediction, boundary))
-  dev.off()
+
+plot_preds <- function(pred, 
+                       nm, 
+                       type = "prediction", #"field" "iid" "covariates"
+                       trans = "identity",
+                       save = TRUE){
+  
+  if(is.null(pred$mean_prediction[[type]])){   
+    print(paste0(nm,": Type ",type," is Null."))
+    return()
+  }
+  
+  pred_rast <- raster::mask(pred$mean_prediction[[type]], boundary) # Extract predicted values
+  pred_df <- raster::as.data.frame(pred_rast, xy = T) %>% rename(layer = 3)
+  
+  if(all(is.na(pred_df$layer))){
+    print(paste0(nm,": All raster values NA."))
+    return()
+    }
+  
+  if(type == "prediction"){
+    fill_lab = "Predicted rate"
+    pred_df$layer <- pred_df$layer*1e6 # Scale to rate per 100,000
+  }else if(type == "field"){fill_lab = "Fitted field"
+  }else if (type == "iid"){fill_lab = "Fitted IID\nper block"
+  }else if (type == "covariates"){fill_lab = "Fixed effects"
+  }else{fill_lab = NULL}
+  
+  ggplot(pred_df, aes(x = x, y = y, fill = layer)) +
+    geom_raster() +
+    scale_fill_viridis_c(option = "rocket", trans = trans, na.value = "transparent") + 
+    labs(subtitle = nm,
+         x = NULL, y = NULL, 
+         fill = fill_lab) +
+    theme_void(base_size = 14) +
+    theme(legend.position = c(0.85,0.9)) -> p
+  
+  if(save == T){
+    ggsave(here::here(figdir,paste0(type,"_",gsub(" ","",nm),".png")),p, width = 8, height = 6, dpi = 300)
+  }
+  return(p)
+  
 }
 
-purrr::map2(predictions, names(predictions), plot_preds)
-
-plot_pred_iid <- function(pred, nm){
-  png(here::here(figdir,paste0("pred_iid_",gsub(" ","",nm),".png")), width = 800, height = 600)
-  plot(mask(pred$mean_prediction$iid, boundary))
-  dev.off()
-}
-purrr::map2(predictions, names(predictions), plot_pred_iid)
-
-plot_pred_cov <- function(pred, nm){
-  png(here::here(figdir,paste0("pred_cov_",gsub(" ","",nm),".png")), width = 800, height = 600)
-  plot(mask(pred$mean_prediction$covariates, boundary))
-  dev.off()
-}
-purrr::map2(predictions, names(predictions), plot_pred_cov)
-
-
-# Map fitted spatial field 
-pred_final <- predictions$Full
-png(here::here(figdir,"fitted_field.png"), width = 800, height = 600)
-plot(mask(pred_final$mean_prediction$field, boundary))
-dev.off()
+purrr::map2(predictions, names(predictions), plot_preds, type = "prediction", trans = "log10")
+purrr::map2(predictions, names(predictions), plot_preds, type = "field")
+purrr::map2(predictions, names(predictions), plot_preds, type = "iid")
+purrr::map2(predictions, names(predictions), plot_preds, type = "covariates")
 
 #------------------------------------------------------------------------------#
 # Combine for MS figure
 
-png(here::here("figures/manuscript/Fig4b.png"), width = 800, height = 1200)
-par(mfrow = c(2,1))
-plot(mask(pred_final$mean_prediction$prediction, boundary))
-plot(mask(pred_final$mean_prediction$field, boundary))
-dev.off()
+p_pred <- plot_preds(predictions$Full, nm = "Full", type = "prediction", trans = "log10", save = F) + 
+  labs(subtitle = NULL)
+p_field <- plot_preds(predictions$Full, nm = "Full", type = "field", save = F) + 
+  labs(subtitle = NULL)
 
-# plot(mask(pred_final$mean_prediction$prediction, boundary))
-# fig4b1 <- recordPlot()
-# plot(mask(pred_final$mean_prediction$field, boundary))
-# fig4b2 <- recordPlot()
-# 
-# fig4b <- plot_grid(fig4b1, fig4b2,
-#           ncol = 1)
-# 
-# plot_grid(plot_covs, fig4b,
-#           ncol = 2)
-# ggsave(here::here("figures/manuscript/Fig4_test.png"), height = 6, width = 15)
+# Make final figure
+plot_covs + (p_pred / p_field) + plot_annotation(tag_levels = "a") + plot_layout(widths = c(1,1))
+ggsave(here::here("figures/manuscript","Fig4_revised.png"), width = 15, height = 9, dpi = 300)
 
 ################################################################################
 ################################################################################

@@ -11,7 +11,7 @@ set.seed(1234)
 
 # Fix default ggsave background
 ggsave <- function(..., bg = 'white') ggplot2::ggsave(..., bg = bg)
-theme_set(theme_minimal())
+theme_set(theme_minimal(base_size = 16))
 pal <- viridis::plasma(4, end = 0.85)
 
 # Source helper functions
@@ -54,16 +54,6 @@ pred_cases <- stack(lapply(predictions, get_cases_mean))
 pred_cases_village <- exactextractr::exact_extract(pred_cases, 
                                                    v_shp_vl, 
                                                    fun = "sum")
-
-# Extract draws from disaggregation fit to explore uncertainty
-# pred_sims <- lapply(predictions, get_cases_sims)
-# 
-# pred_sims_village <- exactextractr::exact_extract(pred_sims$Full, 
-#                                                   v_shp_vl, 
-#                                                   fun = "sum")
-# pred_gt0_village <- apply(pred_sims_village, 1, function(r){mean(round(r)>0)})
-#
-# brier <- (pred_gt0_village - as.numeric(v_shp_vl$X2018 > 0))^2
 
 # Add predictions for each village
 v_shp_vl_pred <- v_shp_vl %>% 
@@ -155,7 +145,7 @@ v_shp_vl_pred %>%
 ggsave(here::here(figdir,"maps_pred_combined_rf.png"), map_comb, height = 4, width = 12)
 
 (map_bl + map_disag_iid) / (map_disag + map_rf) + 
-  plot_annotation(tag_levels = "A") + 
+  plot_annotation(tag_levels = "a") + 
   plot_layout(guides = "collect") -> maps_combined
 
 ggsave(here::here(figdir,"maps_pred_combined.png"), maps_combined, height = 10, width = 12)
@@ -238,7 +228,7 @@ get_all_errors <- function(dat){
            group = unique(dat$block_zero))
 }
 
-errors_all_bynz <- bind_rows(lapply(by_endm, get_all_errors)) %>% 
+errors_all_bynz <- bind_rows(lapply(by_nz, get_all_errors)) %>% 
   mutate(Model = factor(Model, levels = models),
          group = factor(group, levels = c(FALSE,TRUE), labels = c("Block non-zero", "Block zero")))
 
@@ -280,7 +270,7 @@ errors_comb %>%
   geom_point(position = position_dodge(width = 0.2)) +
   labs(x = NULL,
        y = NULL,
-       title = "Spearman's rho",
+       title = expression("Spearman's " * rho),
        shape = NULL) +
   scale_colour_manual(values = pal) +
   scale_shape_manual(values = c(1,16)) +
@@ -310,25 +300,25 @@ errors_comb %>%
   guides(col = "none") -> agreeaffect_byendm
 
 (rmse_byendm + mae_byendm) / (rho_byendm + agreeaffect_byendm) + 
-  plot_annotation(tag_levels = "A") +
+  plot_annotation(tag_levels = "a") +
   plot_layout(guides = "collect") & theme(legend.position='bottom')
 ggsave(here::here(figdir,"plot_errors4_bynonzero.png"), height = 8, width = 10)
 
-(rmse_byendm + mae_byendm) + rho_byendm + 
-  plot_annotation(tag_levels = "A") + plot_layout(guides = "collect") & theme(legend.position='bottom')
-ggsave(here::here(figdir,"plot_errors3_bynonzero.png"), height = 5, width = 15)
-ggsave(here::here("figures","manuscript","Fig5.png"), height = 5, width = 15)
+rmse_byendm + mae_byendm + rho_byendm + 
+  plot_annotation(tag_levels = "a") + plot_layout(guides = "collect") & theme(legend.position='bottom')
+ggsave(here::here(figdir,"plot_errors_bynonzero.png"), height = 5, width = 15)
+ggsave(here::here("figures","manuscript","Fig5.png"), height = 6, width = 18, dpi = 300)
 
 # ---------------------------------------------------------------------------- #
 # Summarise accuracy by block endemicity
 
-v_shp_vl_pred %>% 
+v_shp_vl_pred_df %>% 
   mutate(block_endm = factor(case_when(X2018_inc_blk*1e4 < 0.5 ~ "Low",
                                        (X2018_inc_blk*1e4 >= 0.5 & X2018_inc_blk*1e4 <= 1.5) ~ "Mid",
                                        (X2018_inc_blk*1e4 > 1.5) ~ "High"),
-                             levels = c("Low","Mid","High"))) -> v_shp_vl_pred
+                             levels = c("Low","Mid","High"))) -> v_shp_vl_pred_df
 
-v_shp_vl_pred %>% 
+v_shp_vl_pred_df %>% 
   group_by(block_endm) %>% 
   group_split() -> by_endm
 
@@ -370,9 +360,9 @@ errors_all_byendm %>%
   geom_point(position = position_dodge(width = 0.3)) + 
   guides(col = "none") +
   scale_colour_manual(values = pal) +
-  labs(x = "Block endemicity", y = "Spearman's rho") -> rho_byendm
+  labs(x = "Block endemicity", y = expression("Spearman's " *rho)) -> rho_byendm
 
-rho_byendm + rmse_byendm + plot_annotation(tag_levels = "A")
+rho_byendm + rmse_byendm + plot_annotation(tag_levels = "a")
 ggsave(here::here(figdir,"model_compare_byendm.png"), height = 4, width = 10)
 
 # ---------------------------------------------------------------------------- #
@@ -401,11 +391,11 @@ paste(round(range(
 p_bl <- make_plot(v_shp_vl_pred$obs_inc, v_shp_vl_pred$pred_inc_bl, xlims = c(0.00001,750),
                   title = "Baseline", rho = errors_all$rho[errors_all$Model == "Baseline"])
 p_dis1 <- make_plot(v_shp_vl_pred$obs_inc, v_shp_vl_pred$pred_inc_iid, xlims = c(0.00001,750),
-                    title = "Disaggregation - IID only", rho = errors_all$rho[errors_all$Model == "Disaggregation - IID only"])
+                    title = "Disaggregation - without field", rho = errors_all$rho[errors_all$Model == "Disaggregation - without field"])
 p_dis2 <- make_plot(v_shp_vl_pred$obs_inc, v_shp_vl_pred$pred_inc_full, xlims = c(0.00001,750),
                     title = "Disaggregation - Full", rho = errors_all$rho[errors_all$Model == "Disaggregation - Full"])
 p_rf <- make_plot(v_shp_vl_pred$obs_inc, v_shp_vl_pred$pred_inc_rf, xlims = c(0.00001,750),
-                  title = "Village-level", rho = errors_all$rho[errors_all$Model == "Village level"])
+                  title = "Village-level random forest", rho = errors_all$rho[errors_all$Model == "Village-level random forest"])
 p_list <- list(p_bl, p_dis1, p_dis2, p_rf)
 
 # Add axis labels
@@ -478,13 +468,13 @@ ggplot(obs_exp_long) +
   scale_y_continuous(trans = "log2") +
   guides(alpha = "none", col = "none") +
   theme(legend.position = c(0.8,0.8)) -> bycat_all
-
+bycat_all
 ggsave(here::here(figdir,"obsvexp_bycats_wpreds.png"), height = 4, width = 8)
 
 # ---------------------------------------------------------------------------- #
 # Plot observed and predicted densities
 
-v_shp_vl_pred %>% 
+v_shp_vl_pred_df %>% 
   pivot_longer(pred_inc_bl:pred_inc_rf) %>%
   mutate(Model = factor(name, labels = models)) %>% #View()
   ggplot() +
@@ -507,7 +497,7 @@ ggsave(here::here(figdir, paste0("obs_pred_densities.png")), compare_dens, heigh
 # Combine model comparison plots for MS
 
 compare_dens_noleg <- compare_dens + theme(legend.position = "none")
-bycat_all / compare_dens_noleg + plot_annotation(tag_levels = "A")
+bycat_all / compare_dens_noleg + plot_annotation(tag_levels = "a")
 ggsave(here::here(figdir,"model_comparison.png"), height = 8, width = 10)
 ggsave(here::here("figures/manuscript/Fig7.png"), height = 8, width = 10, dpi = 300)
 

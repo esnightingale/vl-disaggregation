@@ -1,5 +1,6 @@
 plot_scatter <- function(obs, pred, rho, xlab = NULL, ylab = NULL, title = NULL,
                          xlims =  c(0.0001,1000)){
+  r = round(rho,2)
   data.frame(obs = obs, pred = pred) %>% 
     filter(obs > 0 & pred > 0) %>% 
     ggplot(aes(pred, obs)) +
@@ -9,6 +10,6 @@ plot_scatter <- function(obs, pred, rho, xlab = NULL, ylab = NULL, title = NULL,
     scale_y_continuous(trans = "log10") +
     labs(y = ylab, x = xlab,
          title = title,
-         caption = paste0("Rho = ",round(rho,2))) -> p
+         caption = bquote(rho == .(r))) -> p
   return(p)
 }

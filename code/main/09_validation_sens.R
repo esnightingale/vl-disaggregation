@@ -7,14 +7,14 @@ library(tidyverse)
 library(sf)
 library(patchwork)
 
-theme_set(theme_minimal())
 # Fix default ggsave background
 ggsave <- function(..., bg = 'white') ggplot2::ggsave(..., bg = bg)
+theme_set(theme_minimal(base_size = 16))
 
 list.files(here::here("code","utils"), full.names = TRUE) %>% purrr::walk(source)
 
 # Local data folder
-datadir <- "~/VL/Data"
+datadir <- "C:/Users/phpuenig/Documents/VL/Data"
 figdir <- "figures/disaggregation/predictions"
 
 v_shp_vl <- readRDS(here::here("data","analysis","v_shp_vl.rds")) %>% 
@@ -91,11 +91,11 @@ round(range(
 p_bl <- make_plot(v_shp_vl_pred$obs_inc, v_shp_vl_pred$pred_inc_bl, xlims = c(0.00001,750),
                   title = "Baseline", rho = errors_all$rho[errors_all$Model == "Baseline"])
 p_dis1 <- make_plot(v_shp_vl_pred$obs_inc, v_shp_vl_pred$pred_inc_iid, xlims = c(0.00001,750),
-                    title = "Disaggregation - IID only", rho = errors_all$rho[errors_all$Model == "Disaggregation - IID only"])
+                    title = "Disaggregation - without field", rho = errors_all$rho[errors_all$Model == "Disaggregation - without field"])
 p_dis2 <- make_plot(v_shp_vl_pred$obs_inc, v_shp_vl_pred$pred_inc_full, xlims = c(0.00001,750),
                     title = "Disaggregation - Full", rho = errors_all$rho[errors_all$Model == "Disaggregation - Full"])
 p_rf <- make_plot(v_shp_vl_pred$obs_inc, v_shp_vl_pred$pred_inc_rf, xlims = c(0.00001,750),
-                  title = "Village-level", rho = errors_all$rho[errors_all$Model == "Village level"])
+                  title = "Village-level random forest", rho = errors_all$rho[errors_all$Model == "Village-level random forest"])
 p_list <- list(p_bl, p_dis1, p_dis2, p_rf)
 
 p_lab1 <- 
@@ -121,5 +121,6 @@ p_ / p_lab2 +
 
 p_final
 ggsave(here::here(figdir, paste0("vil_obsvpred_all_sens.png")), p_final, height = 12, width = 10, dpi = 400)
+ggsave(here::here("figures/manuscript/supplementary/FigS6.png"), p_final, height = 12, width = 10, dpi = 400)
 
 ################################################################################
